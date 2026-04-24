@@ -17,6 +17,13 @@ primary_region = "iad"
 [processes]
   bot = "python -u bot.py"
 
+# Persistent storage so the bot's long-term memory (SQLite) and chat log
+# files survive VM restarts and redeploys. Create with:
+#   fly volumes create discord_bot_data --region iad --size 1
+[[mounts]]
+  source = "discord_bot_data"
+  destination = "/app/data"
+
 # Keep exactly one instance running at all times. No autoscaling for a gateway bot.
 [deploy]
   strategy = "immediate"
