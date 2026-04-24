@@ -21,6 +21,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from groq import AsyncGroq
 
+from chat_log import log_event
 from images import search_image
 from persona import PERSONA_NAME, build_system_prompt
 
@@ -128,16 +129,18 @@ class ResponsePolicy:
         "wym",
     )
 
+    # Within this window after the bot replied, treat a new message from the
+    # SAME user as a direct follow-up and always respond.
+    FOLLOWUP_WINDOW_SECONDS = 45.0
+
     def __init__(self) -> None:
         self._last_spoke_at: dict[int, float] = {}
-        self._last_msg_author_was_bot: dict[int, bool] = {}
+        self._last_replied_to: dict[int, int] = {}
 
-    def mark_spoke(self, channel_id: int) -> None:
+    def mark_spoke(self, channel_id: int, replying_to_user_id: int | None) -> None:
         self._last_spoke_at[channel_id] = time.monotonic()
-        self._last_msg_author_was_bot[channel_id] = True
-
-    def note_human_message(self, channel_id: int) -> None:
-        self._last_msg_author_was_bot[channel_id] = False
+        if replying_to_user_id is not None:
+            self._last_replied_to[channel_id] = replying_to_user_id
 
     def _looks_like_question(self, text: str) -> bool:
         stripped = text.strip().lower()
@@ -178,8 +181,13 @@ class ResponsePolicy:
         if PERSONA_NAME.lower() in lowered:
             return True
 
-        # Bot spoke last -> user is almost certainly talking to it.
-        if self._last_msg_author_was_bot.get(message.channel.id, False):
+        # Same user, right after the bot replied to them → follow-up.
+        last_replied_to = self._last_replied_to.get(message.channel.id)
+        last_spoke = self._last_spoke_at.get(message.channel.id, 0.0)
+        if (
+            last_replied_to == message.author.id
+            and (time.monotonic() - last_spoke) < self.FOLLOWUP_WINDOW_SECONDS
+        ):
             return True
 
         # Questions in active conversation are almost always directed at the bot.
@@ -258,13 +266,19 @@ class AIMember(commands.Bot):
                 is_self=is_self,
             )
 
-        # Evaluate the policy BEFORE updating "last message was bot" tracking —
-        # we care about the state as of the message BEFORE this one.
-        should_respond = self.policy.should_respond(message, self.user)
+        # Chat log: record every inbound message (bot replies get their own
+        # "reply" entry below, after generation).
         if not is_self:
-            self.policy.note_human_message(message.channel.id)
+            log_event(
+                kind="msg",
+                guild=getattr(message.guild, "name", None),
+                channel=getattr(message.channel, "name", "dm"),
+                author=str(message.author),
+                author_id=message.author.id,
+                content=message.content or "",
+            )
 
-        if not should_respond:
+        if is_self or not self.policy.should_respond(message, self.user):
             return
 
         try:
@@ -289,9 +303,13 @@ class AIMember(commands.Bot):
         outgoing = text_part
         if image_url:
             outgoing = f"{text_part}\n{image_url}".strip()
+        # Re-cap to Discord's 2000-char limit since the URL was appended
+        # after _clean_reply's truncation.
+        if len(outgoing) > 1990:
+            outgoing = outgoing[:1990].rstrip() + "…"
 
         await self._send_like_a_human(message.channel, outgoing)
-        self.policy.mark_spoke(message.channel.id)
+        self.policy.mark_spoke(message.channel.id, message.author.id)
         # Record our own message in memory too, so follow-ups stay coherent.
         if self.user is not None:
             remembered = text_part or f"(sent an image of: {image_query})"
@@ -300,6 +318,20 @@ class AIMember(commands.Bot):
                 author=self.user.display_name,
                 content=remembered,
                 is_self=True,
+            )
+            log_event(
+                kind="reply",
+                guild=getattr(message.guild, "name", None),
+                channel=getattr(message.channel, "name", "dm"),
+                author=str(self.user),
+                author_id=self.user.id,
+                content=outgoing,
+                extra={
+                    "in_reply_to_user": str(message.author),
+                    "in_reply_to_user_id": message.author.id,
+                    "in_reply_to_content": (message.content or "")[:500],
+                    "image_query": image_query,
+                },
             )
 
     async def _generate_reply(self, message: discord.Message) -> str:
