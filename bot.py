@@ -340,6 +340,21 @@ class AIMember(commands.Bot):
         # the user it's replying to, and strip them from the outgoing message.
         remember_tags, cleaned = self._extract_remember_tags(cleaned)
         text_part, image_query = self._extract_image_request(cleaned)
+
+        # Persist any facts the bot chose to remember FIRST, before any
+        # early return. The model may choose to remember something without
+        # producing a visible reply (e.g. a bare [[REMEMBER: ...]] tag, or
+        # a text-less reply when image search fails); those learnings should
+        # still be kept.
+        guild_id = message.guild.id if message.guild else None
+        for fact in remember_tags:
+            self.memory.add_fact(
+                user_id=message.author.id,
+                user_name=message.author.display_name,
+                fact=fact,
+                guild_id=guild_id,
+            )
+
         image_url: str | None = None
         if image_query:
             image_url = await search_image(image_query, client=self.http_client)
@@ -357,16 +372,6 @@ class AIMember(commands.Bot):
 
         await self._send_like_a_human(message.channel, outgoing)
         self.policy.mark_spoke(message.channel.id, message.author.id)
-
-        # Persist any facts the bot chose to remember about the author.
-        guild_id = message.guild.id if message.guild else None
-        for fact in remember_tags:
-            self.memory.add_fact(
-                user_id=message.author.id,
-                user_name=message.author.display_name,
-                fact=fact,
-                guild_id=guild_id,
-            )
 
         # Record our own message in memory too, so follow-ups stay coherent.
         if self.user is not None:
