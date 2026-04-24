@@ -1,0 +1,22 @@
+# Fly.io config for a Discord bot: no HTTP service, just a single always-on worker.
+# Create the app with:   fly launch --no-deploy --copy-config --name ai-discord-member-<yourname>
+# Set secrets with:      fly secrets set DISCORD_BOT_TOKEN=... GROQ_API_KEY=...
+# Deploy with:           fly deploy
+
+app = "ai-discord-member"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[processes]
+  bot = "python -u bot.py"
+
+# Keep exactly one instance running at all times. No autoscaling for a gateway bot.
+[deploy]
+  strategy = "immediate"
