@@ -282,16 +282,20 @@ class AIMember(commands.Bot):
         if channel_name == LOG_CHANNEL_NAME:
             return
 
-        # Record everything we can see (including our own) so context stays accurate.
+        # Record inbound messages. We intentionally do NOT record our own
+        # messages here — Discord echoes them back through on_message, and
+        # the reply handler already records them explicitly (with clean
+        # text, no image URL) right after sending. Recording both would
+        # double-insert every assistant turn into the LLM context.
         is_self = self.user is not None and message.author.id == self.user.id
-        if message.content:
+        if message.content and not is_self:
             guild_id = message.guild.id if message.guild else None
             self.memory.add_message(
                 guild_id=guild_id,
                 channel_id=message.channel.id,
                 author_id=message.author.id,
                 author_name=message.author.display_name,
-                is_self=is_self,
+                is_self=False,
                 content=message.content,
             )
 
