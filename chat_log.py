@@ -1,8 +1,10 @@
 """Persistent chat log.
 
 Writes every incoming message the bot sees and every reply the bot sends to a
-daily-rotating file under ``logs/``. The format is a single line per event,
-grep-friendly, separate from the normal Python `logging` output.
+daily-rotating file under ``data/logs/``. The format is a single line per event,
+grep-friendly, separate from the normal Python `logging` output. The default
+location lives under ``data/`` so it sits on the same persistent Fly.io volume
+as the SQLite memory DB.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import threading
 from datetime import datetime, timezone
 from logging.handlers import TimedRotatingFileHandler
 
-CHAT_LOG_DIR = os.getenv("CHAT_LOG_DIR", "logs")
+CHAT_LOG_DIR = os.getenv("CHAT_LOG_DIR", "data/logs")
 CHAT_LOG_FILENAME = os.getenv("CHAT_LOG_FILENAME", "chat.log")
 CHAT_LOG_BACKUP_DAYS = int(os.getenv("CHAT_LOG_BACKUP_DAYS", "30"))
 
