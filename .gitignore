@@ -9,3 +9,10 @@ venv/
 .idea/
 .vscode/
 *.log
+*.log.*
+logs/
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

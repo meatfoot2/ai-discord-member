@@ -9,3 +9,6 @@ __pycache__
 venv
 README.md
 .github
+logs
+*.log
+*.log.*
