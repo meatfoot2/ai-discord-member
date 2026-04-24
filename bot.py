@@ -122,7 +122,12 @@ class ResponsePolicy:
         if stripped.endswith("?"):
             return True
         first_chunk = stripped.split("?", 1)[0]
-        return any(first_chunk.startswith(w) for w in self._QUESTION_STARTERS)
+        # Word-boundary check: "what" matches "what" / "what time?" but NOT
+        # "whatever", "however", "whenever", "whoever", etc.
+        return any(
+            first_chunk == w or first_chunk.startswith(w + " ")
+            for w in self._QUESTION_STARTERS
+        )
 
     def should_respond(
         self, message: discord.Message, bot_user: discord.ClientUser | None

@@ -148,20 +148,24 @@ class MemoryStore:
                 )
                 self._conn.commit()
             # Trim the oldest entries so we never keep more than the cap.
+            # Order by ts DESC so facts whose timestamp was just bumped by a
+            # re-confirmation (see IntegrityError branch above) count as
+            # recent and aren't incorrectly evicted.
             self._conn.execute(
                 "DELETE FROM user_facts WHERE user_id = ? AND id NOT IN ("
                 "SELECT id FROM user_facts WHERE user_id = ? "
-                "ORDER BY id DESC LIMIT ?"
+                "ORDER BY ts DESC LIMIT ?"
                 ")",
                 (user_id, user_id, MAX_FACTS_PER_USER),
             )
             self._conn.commit()
 
     def facts_for(self, user_id: int) -> list[str]:
+        # Order by ts DESC so re-confirmed duplicates float to the top.
         with self._lock:
             rows = self._conn.execute(
                 "SELECT fact FROM user_facts WHERE user_id = ? "
-                "ORDER BY id DESC LIMIT ?",
+                "ORDER BY ts DESC LIMIT ?",
                 (user_id, MAX_FACTS_PER_USER),
             ).fetchall()
         return [r["fact"] for r in rows]
